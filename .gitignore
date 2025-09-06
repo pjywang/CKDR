@@ -1,0 +1,13 @@
+
+*.Rhistory
+__pycache__/
+.tmp.drivedownload/
+.tmp.driveupload/
+.ipynb_checkpoints/
+.Rhistory
+*.pyc
+.idea/
+.idea\
+__pycache__\
+.vscode/
+*.asv

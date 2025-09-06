@@ -1,0 +1,28 @@
+\begin{table}[htbp]
+\centering
+\caption{Simulation Results: Subspace Distance and ARI}
+\label{tab:simulation_final}
+\begin{tabular}{llccccccc}
+\toprule
+Setting & Method & \multicolumn{3}{c}{Subspace Distance $\times 100$} & \multicolumn{3}{c}{ARI $\times 100$} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-8}
+& & $n=200$ & $n=500$ & $n=1000$ & $n=200$ & $n=500$ & $n=1000$ \\
+\midrule
+\multirow{3}{*}{(I)} & CKDR-$m^*$ & 10.4 (0.2) & 5.3 (0.1) & \textbf{3.4 (0.0)} & \textbf{99.5 (0.2)} & \textbf{99.4 (0.6)} & \textbf{99.4 (0.6)} \\
+ & CKDR & \textbf{10.3 (0.4)} & \textbf{5.2 (0.0)} & 3.8 (0.5) & 80.6 (1.9) & 94.7 (1.3) & 98.1 (0.8) \\
+ & RS-ES & 12.8 (0.1) & 6.5 (0.1) & 4.3 (0.0) & 99.5 (0.1) & 97.6 (1.2) & 98.8 (0.8) \\
+\midrule
+\multirow{3}{*}{(II)} & CKDR-$m^*$ & 55.9 (0.5) & 44.0 (0.6) & 34.1 (0.8) & \textbf{61.1 (1.7)} & \textbf{87.9 (2.1)} & \textbf{94.3 (1.5)} \\
+ & CKDR & \textbf{55.9 (0.5)} & \textbf{43.2 (1.0)} & \textbf{31.7 (0.7)} & 54.1 (1.6) & 84.0 (2.1) & 89.2 (2.1) \\
+ & RS-ES & -- & -- & -- & 55.9 (1.4) & 68.3 (2.1) & 74.6 (2.3) \\
+\midrule
+\multirow{3}{*}{(III)} & CKDR-$m^*$ & 35.6 (0.3) & \textbf{18.5 (0.2)} & 12.0 (0.1) & \textbf{45.5 (0.7)} & \textbf{74.0 (0.9)} & \textbf{93.2 (0.9)} \\
+ & CKDR & \textbf{32.8 (0.5)} & 33.9 (1.8) & \textbf{11.7 (0.1)} & 45.4 (0.7) & 58.5 (1.2) & 90.1 (1.3) \\
+ & Amalgam & 56.2 (0.4) & 42.5 (0.5) & 35.8 (0.4) & 20.2 (0.5) & 34.2 (0.6) & 40.6 (0.4) \\
+\midrule
+\multirow{3}{*}{(IV)} & CKDR-$m^*$ & \textbf{64.3 (0.2)} & \textbf{57.0 (0.3)} & \textbf{54.3 (0.5)} & 42.7 (0.8) & \textbf{66.9 (1.2)} & \textbf{71.0 (1.6)} \\
+ & CKDR & 65.9 (0.8) & 66.7 (1.4) & 55.6 (0.7) & \textbf{47.1 (0.7)} & 62.4 (1.1) & 71.0 (1.6) \\
+ & Amalgam & 75.1 (0.2) & 70.4 (0.2) & 66.6 (0.2) & 17.4 (0.5) & 25.3 (0.6) & 34.5 (0.9) \\
+\bottomrule
+\end{tabular}
+\end{table}
