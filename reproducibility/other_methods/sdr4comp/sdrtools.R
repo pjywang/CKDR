@@ -118,9 +118,9 @@ sdr4normal.fit <- function(x,y,dim=ncol(get_fyZ(y)),lambda=0){
   fy = get_fyZ(y)
   m = lm(ratios.c~fy)
   b = as.matrix(coef(m))[-1,]
-  if (is.numeric(b)){
-    b = t(as.matrix(b))
-  }
+  # if (is.numeric(b)){
+  #   b = t(as.matrix(b))
+  # }
 
   if (is(b, "matrix")){
     b = t(b)
