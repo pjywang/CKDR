@@ -82,7 +82,7 @@ def extract_genus_from_taxonomic_string(taxa_string):
     
     return None
 
-def group_taxa_by_genus(taxa_list, top=15):
+def group_taxa_by_genus(taxa_list, top=15, show_other=True):
     """
     Group taxa by genus with consistent bracket handling.
     """
@@ -129,7 +129,7 @@ def group_taxa_by_genus(taxa_list, top=15):
             formatted_taxa.append(f"\\textit{{{genus}}} ({count})")
     
     # Add indication of remaining genera if there are more than top
-    if remaining_genera_count > 0:
+    if show_other and remaining_genera_count > 0:
         formatted_taxa.append(f"and {remaining_genera_count} other genera")
     
     # Add unclassified taxa (but don't count them towards the top limit)
@@ -142,7 +142,8 @@ def group_taxa_by_genus(taxa_list, top=15):
     
     return formatted_taxa
 
-def generate_taxa_table(cluster_dict, output_path, dataname, top=15):
+def generate_taxa_table(cluster_dict, output_path, dataname, top=15,
+                        show_other=True, show_total=True):
     """
     Generate a LaTeX booktabs table showing taxonomic composition of clusters.
     """
@@ -162,27 +163,29 @@ def generate_taxa_table(cluster_dict, output_path, dataname, top=15):
     latex_content.append("\\midrule")
     
     # Process each cluster
-    for cluster_id in sorted(cluster_dict.keys()):
+    cluster_ids = list(cluster_dict.keys())
+    for cluster_id in cluster_ids:
         taxa_list = cluster_dict[cluster_id]
+        row_label = cluster_id if isinstance(cluster_id, str) else f"$z_{{{cluster_id}}}$"
         
         if len(taxa_list) == 0:
-            latex_content.append(f"$z_{{{cluster_id}}}$ & (No taxa assigned) \\\\")
+            latex_content.append(f"{row_label} & (No taxa assigned) \\\\")
             continue
         
         # Group and format taxa
-        formatted_taxa = group_taxa_by_genus(taxa_list, top=top)
+        formatted_taxa = group_taxa_by_genus(taxa_list, top=top, show_other=show_other)
         
         # Create a single string for this cluster
         taxa_text = "; ".join(formatted_taxa)
         
-        # Add total count
-        taxa_text += f" (\\textbf{{{len(taxa_list)} total}})"
+        if show_total:
+            taxa_text += f" (\\textbf{{{len(taxa_list)} total}})"
         
         # Add the row
-        latex_content.append(f"$z_{{{cluster_id}}}$ & {taxa_text} \\\\")
+        latex_content.append(f"{row_label} & {taxa_text} \\\\")
         
         # Add spacing between clusters (except for the last one)
-        if cluster_id != max(cluster_dict.keys()):
+        if cluster_id != cluster_ids[-1]:
             latex_content.append("\\addlinespace")
     
     # Table footer

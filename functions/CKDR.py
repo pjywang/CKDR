@@ -29,7 +29,7 @@ class CKDR(object):
 
         :param type_Y: None, "multiclass", "binary", "continuous", "gaussian". If None (== continuous), we use linear kernel for Y. If gaussian, we embed Y into Gaussian RKHS.
         
-        :param dtype: torch dtype (default is float32)           
+        :param dtype: torch dtype (default is float64)           
         :param device: torch device (default is cpu; can be 'cuda' if available and the sample size is large (>1000))
         """
 
@@ -193,12 +193,15 @@ class CKDR(object):
         else:
             PX_test = torch.matmul(X_test, P.T)
         K_PX = Gaussian_gram_matrix(PX, sigma)
-        G_PX_inv = torch.linalg.inv(center(K_PX) + self.n * epsilon * torch.eye(self.n, dtype=self.dtype, device=self.device))
+        G_PX_reg = center(K_PX) + self.n * epsilon * torch.eye(self.n, dtype=self.dtype, device=self.device)
 
         K_ZZtest = Gaussian_gram_matrix(PX_test, sigma, PX) - torch.mean(K_PX, dim=0, keepdim=True)
         K_ZZ_centered = K_ZZtest - torch.mean(K_ZZtest, dim=1, keepdim=True)
 
-        mat = 1 / self.n + torch.matmul(K_ZZ_centered, G_PX_inv)
+        # G_PX_reg is SPD. Cholesky gives A = L L^T; cholesky_solve(B, L)
+        # returns A^{-1} B, so transposes implement the former right solve.
+        chol = torch.linalg.cholesky(G_PX_reg)
+        mat = 1 / self.n + torch.cholesky_solve(K_ZZ_centered.T, chol).T
 
         Tr -= 2* torch.sum(K_YYtest * mat)
         Tr += torch.trace(torch.matmul(torch.matmul(mat, K_Y), mat.T))
@@ -236,11 +239,15 @@ class CKDR(object):
         
         PX = torch.matmul(self.X, P.T)
         K_PX = Gaussian_gram_matrix(PX, sigma)
-        G_PX_inv = torch.linalg.inv(center(K_PX) + self.n * epsilon * torch.eye(self.n, dtype=self.dtype, device=self.device))
+        G_PX_reg = center(K_PX) + self.n * epsilon * torch.eye(self.n, dtype=self.dtype, device=self.device)
 
         K_ZZ = Gaussian_gram_matrix(PX_test, sigma, PX)
 
-        fit_coef = torch.matmul(G_PX_inv, self.Y - torch.mean(self.Y, dim=0, keepdim=True))
+        # KRR coefficient matrix A^{-1} Y_c from the Cholesky factor of A.
+        chol = torch.linalg.cholesky(G_PX_reg)
+        fit_coef = torch.cholesky_solve(
+            self.Y - torch.mean(self.Y, dim=0, keepdim=True), chol
+        )
         offset = torch.mean(self.Y, dim=0) - torch.matmul(
                                                     torch.mean(K_PX, dim=0, keepdim=True),
                                                     fit_coef)
@@ -251,7 +258,7 @@ class CKDR(object):
             yhat = torch.squeeze(yhat).numpy()
         elif self.type_Y == "multiclass":   ## reflects one-hot encoding
             max_indices = torch.argmax(yhat, dim=1)
-            yhat = torch.nn.functional.one_hot(max_indices, num_classes=yhat.shape[1]).float().numpy()
+            yhat = torch.nn.functional.one_hot(max_indices, num_classes=yhat.shape[1]).to(dtype=self.dtype).numpy()
         else:
             # Continuous response (ndim=2 output)
             yhat = yhat.numpy()

@@ -4,7 +4,7 @@
 % Simulation script for Relative Shift with Equi-Sparsity (RS-ES) method
 % 
 % This script generates simulated compositional data using the same methodology
-% as in reproducibility/simulations.py to ensure consistency across different
+% as in reproducibility/simulation/simulations.py to ensure consistency across different
 % analysis methods. The data generation process includes:
 % 
 % 1. Logistic-normal distribution for X data (compositional)
@@ -76,7 +76,7 @@ addpath(project_root);
 py.sys.path().insert(int32(0), project_root);
 
 % simulation tools
-simtools = py.importlib.import_module('reproducibility.simulations');
+simtools = py.importlib.import_module('reproducibility.simulation.simulations');
 %%
 
 % Setup simulation parameters

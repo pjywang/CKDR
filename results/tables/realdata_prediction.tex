@@ -1,0 +1,14 @@
+\begin{table}%[t]
+    \centering
+    \caption{Prediction performance for ileum and vaginal microbiome data. The ileum row reports misclassification rate (MCR, \%; standard errors in parentheses), and the vaginal row reports mean squared error (standard errors in parentheses).}
+    \label{tab: real prediction}
+    \small
+    \begin{tabular}{lccccccc}
+        \toprule
+         & CKDR-3 & CKDR-5 & CKDR$^*$ & LC-Lasso & clr-Kernel & clr-RF & RS-ES \\
+        \midrule
+        Ileum MCR (\%) & 26.3 (0.8) & \textbf{25.5 (0.8)} & 26.3 (0.8) & 28.5 (0.7) & 28.2 (0.7) & 34.5 (0.9) & -- \\
+        Vaginal MSE & 3.27 (0.08) & \textbf{3.26 (0.08)} & 3.27 (0.08) & 3.76 (0.06) & 3.41 (0.06) & 3.31 (0.07) & 4.20 (0.09) \\
+        \bottomrule
+    \end{tabular}%
+\end{table}

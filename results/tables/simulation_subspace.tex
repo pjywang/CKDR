@@ -1,0 +1,30 @@
+\begin{table}[t]
+    \centering
+    \caption{Simulation results on estimation accuracy for SDR and true amalgamation, with standard errors in parentheses. Bold-faced numbers indicate the best result for each setting.}
+    \label{tab:simulation-subspace}
+    \begin{scriptsize}
+    \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}llcccccc}
+    \toprule
+     &  & \multicolumn{3}{c}{$\rho(\row(\wh P_n), \mathcal{C}_{Y|X}) \times 100$} & \multicolumn{3}{c}{ARI $\times 100$} \\
+    \cmidrule(lr){3-5} \cmidrule(lr){6-8}
+    Setting& Method & $n=200$ & $n=500$ & $n=1000$ & $n=200$ & $n=500$ & $n=1000$ \\
+    \midrule
+     \multirow{3}{*}{(i)} & CKDR-$m^\star$ & 13.1 (0.4) & 7.5 (0.6) & \textbf{4.2 (0.0)} & 98.0 (0.7) & 96.3 (1.4) & 98.8 (0.8) \\
+      & CKDR$^*$ & \textbf{11.9 (0.4)} & \textbf{6.4 (0.1)} & 4.4 (0.0) & 53.6 (2.3) & 37.7 (1.5) & 49.9 (2.5) \\
+      & RS-ES & 12.8 (0.1) & 6.5 (0.1) & 4.3 (0.0) & \textbf{99.5 (0.1)} & \textbf{97.6 (1.2)} & \textbf{98.8 (0.8)} \\
+    \addlinespace
+     \multirow{3}{*}{(ii)} & CKDR-$m^\star$ & 56.3 (0.4) & \textbf{44.1 (0.7)} & \textbf{31.4 (0.8)} & 62.0 (1.7) & 82.0 (2.4) & 88.2 (2.2) \\
+      & CKDR$^*$ & \textbf{55.9 (0.4)} & 45.0 (0.7) & 32.7 (0.7) & \textbf{62.7 (1.5)} & \textbf{84.1 (2.2)} & \textbf{91.7 (1.8)} \\
+      & RS-ES & -- & -- & -- & 55.9 (1.4) & 68.3 (2.1) & 74.6 (2.3) \\
+    \addlinespace
+     \multirow{3}{*}{(iii)} & CKDR-$m^\star$ & \textbf{35.7 (0.3)} & \textbf{18.7 (0.2)} & \textbf{12.2 (0.1)} & \textbf{45.5 (0.7)} & \textbf{73.3 (0.9)} & \textbf{93.6 (0.5)} \\
+      & CKDR$^*$ & 56.4 (1.0) & 29.6 (1.7) & 12.3 (0.7) & 41.1 (1.0) & 69.6 (1.3) & 79.1 (1.4) \\
+      & Amalgam & 56.2 (0.4) & 42.5 (0.5) & 35.8 (0.4) & 20.2 (0.5) & 34.2 (0.6) & 40.6 (0.4) \\
+    \addlinespace
+     \multirow{3}{*}{(iv)} & CKDR-$m^\star$ & \textbf{64.4 (0.2)} & \textbf{56.8 (0.3)} & \textbf{49.9 (0.6)} & \textbf{42.6 (0.8)} & \textbf{66.9 (1.1)} & \textbf{76.9 (1.4)} \\
+      & CKDR$^*$ & 74.8 (0.3) & 68.0 (0.5) & 53.1 (0.5) & 42.2 (0.9) & 63.1 (1.2) & 76.3 (1.4) \\
+      & Amalgam & 75.1 (0.2) & 70.4 (0.2) & 66.6 (0.2) & 17.4 (0.5) & 25.3 (0.6) & 34.5 (0.9) \\
+    \bottomrule
+    \end{tabular*}
+    \end{scriptsize}
+\end{table}

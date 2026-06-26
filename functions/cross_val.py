@@ -1,6 +1,7 @@
 
 from .CKDR import CKDR
-from .pgd import train_ckdr
+from .pgd import train_ckdr_pgd
+from .sca import train_ckdr
 
 import numpy as np
 import itertools, pickle
@@ -10,10 +11,76 @@ from sklearn.model_selection import KFold, StratifiedKFold
 from scipy.spatial.distance import pdist
 
 
+def _get_trainer(solver):
+    """Return the selected CKDR optimizer. SCA is the primary solver."""
+    if solver == "sca":
+        return train_ckdr
+    if solver == "pgd":
+        return train_ckdr_pgd
+    raise ValueError("solver must be 'pgd' or 'sca'")
+
+
+def _default_sigma(m):
+    """Compute the fixed kernel bandwidth for target dimension m on the simplex.
+
+    sigma_m = sqrt{2(m-1) / (m(m+1))}
+    """
+    return np.sqrt(2 * (m - 1) / (m * (m + 1)))
+
+
+def _apply_one_se_rule(cv_scores, dim_list, epsilon_list):
+    """
+    Apply the one-SE rule to select hyperparameters.
+    Only used in fixed-sigma mode where the sigma axis has length 1.
+
+    1. Find global best mean CV error and its SE.
+    2. Collect all candidates within best_mean + best_SE.
+    3. Among candidates, pick smallest m (by value).
+    4. Within that m, pick largest epsilon (by value).
+
+    Parameters
+    ----------
+    cv_scores : np.ndarray, shape (D, E, 1, folds)
+    dim_list : list of target dimensions
+    epsilon_list : array of epsilon values
+
+    Returns
+    -------
+    i_best, j_best, k_best : int
+        Indices of the selected hyperparameters (k_best is always 0).
+    """
+    num_folds = cv_scores.shape[3]
+    mean_scores = np.mean(cv_scores, axis=3)
+    se_scores = np.std(cv_scores, axis=3, ddof=1) / np.sqrt(num_folds)
+
+    # Step 1: global best
+    best_flat = np.argmin(mean_scores)
+    best_idx = np.unravel_index(best_flat, mean_scores.shape)
+    best_mean = mean_scores[best_idx]
+    best_se = se_scores[best_idx]
+    threshold = best_mean + best_se
+
+    # Step 2: candidates within threshold
+    candidate_mask = mean_scores <= threshold
+    candidates = list(zip(*np.where(candidate_mask)))  # list of (i, j, k)
+
+    # Step 3: smallest m (by value)
+    min_dim = min(dim_list[c[0]] for c in candidates)
+    candidates = [c for c in candidates if dim_list[c[0]] == min_dim]
+
+    # Step 4: largest epsilon (by value) within that m
+    max_eps = max(epsilon_list[c[1]] for c in candidates)
+    candidates = [c for c in candidates if epsilon_list[c[1]] == max_eps]
+
+    i_best, j_best, k_best = candidates[0]  # k_best is always 0
+
+    return i_best, j_best, k_best
+
+
 def ckdr_cv(X, Y, type_Y, folds=5, 
             sigma_list=None, epsilon_list=None, dim_list=None, 
             verbose=True, refit=True, save=False, seed=0, 
-            med=True, **kwargs):
+            med=True, solver="sca", **kwargs):
     """
     Perform cross-validation for the compositional kernel dimension reduction (CKDR) method
     to select the best hyperparameters (sigma_Z, epsilon, target_dim).
@@ -35,11 +102,11 @@ def ckdr_cv(X, Y, type_Y, folds=5,
     folds : int, default=5
         Number of cross-validation folds.
     sigma_list : list or None, default=None
-        List of sigma_Z values (kernel width for Z) to try.
-        If None, a default range is used.
+        List of sigma_Z multipliers to try. If None, the finalized SCA
+        default uses the median pairwise distance.
     epsilon_list : list or None, default=None
         List of epsilon values (regularization for K_Y) to try.
-        If None, a default value is used.
+        If None, the finalized SCA epsilon grid is used.
     dim_list : list or None, default=None
         List of target_dim values (dimensionality of the subspace) to try.
         If None, a default value is used.
@@ -54,8 +121,10 @@ def ckdr_cv(X, Y, type_Y, folds=5,
         pickled results dictionary in the "./training_results/" directory.
     seed : int or np.random.RandomState, default=0
         Seed for random number generation to ensure reproducibility.
+    solver : {"pgd", "sca"}, default="sca"
+        Optimization algorithm used for each CKDR fit.
     **kwargs : dict
-        Additional keyword arguments passed to the `train_ckdr` function.
+        Additional keyword arguments passed to the selected trainer.
         These can include parameters like initial_lr, armijo_c1, etc.
 
     Returns:
@@ -72,13 +141,22 @@ def ckdr_cv(X, Y, type_Y, folds=5,
     if dim_list is None:
         dim_list = [3]
     if epsilon_list is None:
-        epsilon_list = [1/X.shape[0]] # good value for gaussian kernel regression
+        epsilon_list = np.geomspace(1e-4, 0.01, 10)
     if sigma_list is None:
-        # Default sigma_list based on a geometric space and the median of pairwise distances
-        sigma_list = np.geomspace(1/5, 1, 10)
+        # Default finalized SCA setting: median pairwise distance and argmin selection.
+        sigma_list = [1.0]
     
-    base_sigma = np.median(pdist(X)) if med else 1.
-    sigma_list = base_sigma * np.array(sigma_list)
+    trainer = _get_trainer(solver)
+
+    # Legacy fixed-sigma mode is retained only for explicit internal use.
+    use_fixed_sigma = sigma_list is None
+    if use_fixed_sigma:
+        sigma_list = [None]  # placeholder; actual value computed per dim
+    else:
+        base_sigma = np.median(pdist(X)) if med else 1.
+        sigma_list = base_sigma * np.array(sigma_list)
+    # base_sigma = np.median(pdist(X)) if med else 1.
+    # sigma_list = base_sigma * np.array(sigma_list)
 
     # Initialize RandomState for reproducibility
     RS = seed if isinstance(seed, np.random.RandomState) else np.random.RandomState(seed)
@@ -108,8 +186,13 @@ def ckdr_cv(X, Y, type_Y, folds=5,
 
     # Iterate over all hyperparameter combinations
     for i, current_dim in enumerate(dim_list):
+        # Fixed sigma for this dimension (overrides grid when use_fixed_sigma=True)
+        if use_fixed_sigma:
+            current_sigma_Z = _default_sigma(current_dim)
         for j, current_epsilon in enumerate(epsilon_list):
-            for k, current_sigma_Z in enumerate(sigma_list):
+            for k, current_sigma_Z_grid in enumerate(sigma_list):
+                if not use_fixed_sigma:
+                    current_sigma_Z = current_sigma_Z_grid
                 if verbose:
                     print(f"\\nTesting parameters: target_dim = {current_dim}, epsilon = {current_epsilon}, sigma_Z = {current_sigma_Z:.4f}")
 
@@ -122,7 +205,7 @@ def ckdr_cv(X, Y, type_Y, folds=5,
                     X_test, Y_test = X_processed[test_indices], Y_processed[test_indices]
 
                     # Train the CKDR model for the current fold and parameters
-                    P_matrix, _, trained_ckdr_model = train_ckdr(
+                    P_matrix, _, trained_ckdr_model = trainer(
                         X_train, Y_train, 
                         target_dim=current_dim, epsilon=current_epsilon, sigma=current_sigma_Z, type_Y=type_Y,
                         verbose=False, # verbose is off for inner loops
@@ -138,14 +221,25 @@ def ckdr_cv(X, Y, type_Y, folds=5,
     # Calculate mean scores across folds
     mean_cv_scores = np.mean(cv_scores, axis=3)
 
-    # Find the indices of the best parameters
-    best_param_indices = np.unravel_index(np.argmin(mean_cv_scores), mean_cv_scores.shape)
-    i_best, j_best, k_best = best_param_indices[0], best_param_indices[1], best_param_indices[2]
-    
+    # # Find the indices of the best parameters (original argmin selection)
+    # best_param_indices = np.unravel_index(np.argmin(mean_cv_scores), mean_cv_scores.shape)
+    # i_best, j_best, k_best = best_param_indices[0], best_param_indices[1], best_param_indices[2]
+
+    # Final SCA defaults use user-supplied median sigma multipliers, hence argmin.
+    # The one-SE branch is retained for legacy fixed-sigma mode.
+    if use_fixed_sigma:
+        i_best, j_best, k_best = _apply_one_se_rule(
+            cv_scores, dim_list, epsilon_list
+        )
+        best_sigma_Z = _default_sigma(dim_list[i_best])
+    else:
+        best_param_indices = np.unravel_index(np.argmin(mean_cv_scores), mean_cv_scores.shape)
+        i_best, j_best, k_best = best_param_indices[0], best_param_indices[1], best_param_indices[2]
+        best_sigma_Z = sigma_list[k_best]
+
     # Retrieve the best hyperparameters
     best_target_dim = dim_list[i_best]
     best_epsilon = epsilon_list[j_best]
-    best_sigma_Z = sigma_list[k_best]
 
     if verbose:
         print(f"\\nSelected parameters after {num_folds}-fold Cross-validation:")
@@ -166,14 +260,14 @@ def ckdr_cv(X, Y, type_Y, folds=5,
         if verbose:
             print("\\nRefitting model with selected best parameters on the full dataset...")
         # Refit the model on the entire processed dataset
-        P_refit, obj_refit, ckdr_refit_model = train_ckdr(
+        P_refit, obj_refit, ckdr_refit_model = trainer(
             X_processed, Y_processed, 
             target_dim=best_target_dim, 
             epsilon=best_epsilon, 
             sigma=best_sigma_Z, 
             type_Y=type_Y,
             verbose=verbose, # Use main verbose setting for refit
-            seed=RS, # Use the main random state for the final fit
+            seed=init_seed,
             **kwargs
         )
         if type_Y not in ["binary", "multiclass"]:
@@ -203,7 +297,7 @@ def ckdr_cv(X, Y, type_Y, folds=5,
 def ckdr_cv_parallel(X, Y, type_Y, folds=5, 
                      sigma_list=None, epsilon_list=None, dim_list=None, 
                      verbose=True, refit=True, save=False, seed=0,
-                     n_jobs=-2, med=True, **kwargs):
+                     n_jobs=-2, med=True, solver="sca", **kwargs):
     """
     Parallelized cross-validation for CKDR using joblib.
     This version parallelizes the evaluation of each hyperparameter combination
@@ -220,9 +314,10 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
     folds : int, default=5
         Number of cross-validation folds.
     sigma_list : list or None, default=None
-        List of sigma_Z values to try.
+        List of sigma_Z multipliers to try. If None, the finalized SCA
+        default uses the median pairwise distance.
     epsilon_list : list or None, default=None
-        List of epsilon values to try.
+        List of epsilon values to try. If None, the finalized SCA epsilon grid is used.
     dim_list : list or None, default=None
         List of target_dim values to try.
     verbose : bool, default=True
@@ -237,8 +332,10 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
         Number of CPU cores to use for parallel processing.
         -1 means using all processors.
         -2 means using all processors but one.
+    solver : {"pgd", "sca"}, default="sca"
+        Optimization algorithm used for each CKDR fit.
     **kwargs : dict
-        Additional keyword arguments passed to `train_ckdr`.
+        Additional keyword arguments passed to the selected trainer.
 
     Returns:
     -------
@@ -249,13 +346,22 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
     if dim_list is None:
         dim_list = [3]
     if epsilon_list is None:
-        epsilon_list = [1/X.shape[0]] # good value for gaussian kernel regression
+        epsilon_list = np.geomspace(1e-4, 0.01, 10)
     if sigma_list is None:
-        # Default sigma_list based on a geometric space and the median of pairwise distances
-        sigma_list = np.geomspace(1/5, 1, 10)
+        # Default finalized SCA setting: median pairwise distance and argmin selection.
+        sigma_list = [1.0]
     
-    base_sigma = np.median(pdist(X)) if med else 1.
-    sigma_list = base_sigma * np.array(sigma_list)
+    trainer = _get_trainer(solver)
+
+    # Legacy fixed-sigma mode is retained only for explicit internal use.
+    use_fixed_sigma = sigma_list is None
+    if use_fixed_sigma:
+        sigma_list = [None]  # placeholder; actual value computed per dim
+    else:
+        base_sigma = np.median(pdist(X)) if med else 1.
+        sigma_list = base_sigma * np.array(sigma_list)
+    # base_sigma = np.median(pdist(X)) if med else 1.
+    # sigma_list = base_sigma * np.array(sigma_list)
 
     RS = seed if isinstance(seed, np.random.RandomState) else np.random.RandomState(seed)
 
@@ -279,6 +385,9 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
                                                   enumerate(sigma_list)))
 
     for (i, target_dim_val), (j, epsilon_val), (k, sigma_Z_val) in parameter_combinations:
+        # When using fixed sigma, compute actual sigma from the target dimension
+        if use_fixed_sigma:
+            sigma_Z_val = _default_sigma(target_dim_val)
         for l, (train_indices, test_indices) in enumerate(cv_fold_indices):
             tasks_to_run.append(
                 ((i, target_dim_val), (j, epsilon_val), (k, sigma_Z_val), 
@@ -294,10 +403,10 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
     init_seed = RS.randint(0, 2**31 - 1, dtype=np.int32)
 
     # Prepare arguments for each task (without duplicating large arrays)
-    task_args = [(task, init_seed, X_processed, Y_processed, type_Y, kwargs) 
+    task_args = [(task, init_seed, X_processed, Y_processed, type_Y, solver, kwargs) 
                  for task in tasks_to_run]
 
-    parallel_job_verbosity = 5 if verbose else 0 
+    parallel_job_verbosity = 10 if verbose else 0 
     all_task_results = Parallel(n_jobs=n_jobs, 
                                 verbose=parallel_job_verbosity,
                                 )(
@@ -312,13 +421,24 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
     
     mean_cv_scores = np.mean(cv_scores, axis=3)
     
-    # Find best parameters
-    best_param_indices_flat = np.unravel_index(np.argmin(mean_cv_scores), mean_cv_scores.shape)
-    i_best, j_best, k_best = best_param_indices_flat[0], best_param_indices_flat[1], best_param_indices_flat[2]
+    # # Find best parameters (original argmin selection)
+    # best_param_indices_flat = np.unravel_index(np.argmin(mean_cv_scores), mean_cv_scores.shape)
+    # i_best, j_best, k_best = best_param_indices_flat[0], best_param_indices_flat[1], best_param_indices_flat[2]
+
+    # Final SCA defaults use user-supplied median sigma multipliers, hence argmin.
+    # The one-SE branch is retained for legacy fixed-sigma mode.
+    if use_fixed_sigma:
+        i_best, j_best, k_best = _apply_one_se_rule(
+            cv_scores, dim_list, epsilon_list
+        )
+        best_sigma_Z = _default_sigma(dim_list[i_best])
+    else:
+        best_param_indices_flat = np.unravel_index(np.argmin(mean_cv_scores), mean_cv_scores.shape)
+        i_best, j_best, k_best = best_param_indices_flat[0], best_param_indices_flat[1], best_param_indices_flat[2]
+        best_sigma_Z = sigma_list[k_best]
     
     best_target_dim = dim_list[i_best]
     best_epsilon = epsilon_list[j_best]
-    best_sigma_Z = sigma_list[k_best]
 
     if verbose:
         print(f"\\nSelected parameters after {actual_num_folds}-fold Cross-validation (parallel):")
@@ -338,10 +458,10 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
     if refit:
         if verbose:
             print("\\nRefitting model with selected best parameters on the full dataset (parallel CV)...")
-        P_refit, obj_refit, ckdr_refit_model = train_ckdr(
+        P_refit, obj_refit, ckdr_refit_model = trainer(
             X_processed, Y_processed, target_dim=best_target_dim, epsilon=best_epsilon, sigma=best_sigma_Z, type_Y=type_Y,
             verbose=verbose, 
-            seed=RS, 
+            seed=init_seed,
             **kwargs
         )
         if type_Y not in ["binary", "multiclass"]:
@@ -353,7 +473,7 @@ def ckdr_cv_parallel(X, Y, type_Y, folds=5,
 
         results_output_dict["CV_fitted_P"] = P_refit
         results_output_dict["CV_obj_refit"] = obj_refit
-        results_output_dict["CV_ckdr_class"] = ckdr_refit_model\
+        results_output_dict["CV_ckdr_class"] = ckdr_refit_model
 
         if save:
             filename = str(save) if isinstance(save, (str, int, float)) else "ckdr_cv_parallel_results"
@@ -374,14 +494,14 @@ def _evaluate_single_fold_task(args):
     Top-level worker for ckdr_cv_parallel.
     Receives all necessary data as arguments in a tuple.
     """
-    (task_details, seed, X_processed, Y_processed, type_Y, kwargs_dict) = args
-    # from .pgd import train_ckdr
+    (task_details, seed, X_processed, Y_processed, type_Y, solver, kwargs_dict) = args
+    trainer = _get_trainer(solver)
     (param_idx_dim, current_dim), (param_idx_eps, current_epsilon), (param_idx_sigma, current_sigma_Z), \
     (fold_idx, train_indices, test_indices) = task_details
 
     X_train_fold, Y_train_fold = X_processed[train_indices], Y_processed[train_indices]
     X_test_fold, Y_test_fold = X_processed[test_indices], Y_processed[test_indices]
-    P_matrix, _, trained_ckdr_model = train_ckdr(
+    P_matrix, _, trained_ckdr_model = trainer(
         X_train_fold, Y_train_fold, target_dim=current_dim, epsilon=current_epsilon, sigma=current_sigma_Z, type_Y=type_Y,
         verbose=False, seed=seed, **kwargs_dict
     )

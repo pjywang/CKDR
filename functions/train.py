@@ -1,7 +1,7 @@
 # Train functions using train/test split
 import os
 
-from .cross_val import ckdr_cv, ckdr_cv_parallel
+from .cross_val import ckdr_cv, ckdr_cv_parallel, _get_trainer
 
 import torch
 import numpy as np
@@ -16,7 +16,8 @@ MASTER_SEED = 20241225  # Default seed for reproducibility
 def fit_train_test_split(X, Y, type_Y, test_size=0.2, folds=5,
             sigma_list=None, epsilon_list=None, dim_list=None,
             parallel=False, n_jobs=-2, refit_return=False,
-            verbose=True, seed=None, stratify=False, **kwargs):
+            verbose=True, seed=None, stratify=False, solver='sca',
+            **kwargs):
     """
     Perform test error computation from a random train/test split using 
     the CKDR method. Within training data, the best hyperparameters
@@ -39,9 +40,8 @@ def fit_train_test_split(X, Y, type_Y, test_size=0.2, folds=5,
     folds : int, default=5
         Number of cross-validation folds for inner training.
     sigma_list : list or None, default=None
-        List of sigma_Z values (kernel width for Z) to try.
-        If None, a default range is used as a multiple of the median heuristic.
-        np.geomspace(1/2, 2, 5) is recommended.
+        List of sigma_Z multipliers to try. If None, the finalized SCA
+        default uses the median pairwise distance.
     epsilon_list : list or None, default=None
         List of epsilon values (regularization for K_Y) to try.
         If None, a default value is used.
@@ -57,8 +57,7 @@ def fit_train_test_split(X, Y, type_Y, test_size=0.2, folds=5,
     seed : int or np.random.RandomState, default=0
         Seed for random number generation to ensure reproducibility.
     **kwargs : dict
-        Additional keyword arguments passed to the `train_ckdr` function.
-        These can include parameters like initial_lr, armijo_c1, etc.
+        Additional keyword arguments passed to the selected CKDR trainer.
 
     Returns:
     -------
@@ -86,11 +85,11 @@ def fit_train_test_split(X, Y, type_Y, test_size=0.2, folds=5,
     if not parallel:
         results = ckdr_cv(X_train, Y_train, type_Y, folds=folds, 
                         sigma_list=sigma_list, epsilon_list=epsilon_list, 
-                        dim_list=dim_list, verbose=verbose, seed=RS, **kwargs)
+                        dim_list=dim_list, verbose=verbose, seed=RS, solver=solver, **kwargs)
     else:
         results = ckdr_cv_parallel(X_train, Y_train, type_Y, folds=folds, 
                         sigma_list=sigma_list, epsilon_list=epsilon_list, 
-                        dim_list=dim_list, verbose=verbose, n_jobs=n_jobs, seed=RS, **kwargs)    
+                        dim_list=dim_list, verbose=verbose, n_jobs=n_jobs, seed=RS, solver=solver, **kwargs)    
 
     sigma_Z_opt = results['parameters']['sigma_Z']
     epsilon_opt = results['parameters']['epsilon']
@@ -140,6 +139,7 @@ def parallel_fit_train_test_split(X, Y, type_Y, reps=100, n_jobs=-2,
             refit_return=True, # Turn off when finalized
             med=True,
             stratify=True,
+            solver='sca',
             **kwargs):
     """
     Parallel execution of fit_train_test_split using joblib.Parallel.
@@ -148,25 +148,25 @@ def parallel_fit_train_test_split(X, Y, type_Y, reps=100, n_jobs=-2,
     seeds = [seed + rep for rep in range(reps)]  # Independent seeds for each repetition
 
 
-    results = Parallel(n_jobs=n_jobs, verbose=5)(delayed(fit_train_test_split)(
+    results = Parallel(n_jobs=n_jobs, verbose=10)(delayed(fit_train_test_split)(
         X, Y, type_Y, test_size=test_size, folds=folds,
         sigma_list=sigma_list, epsilon_list=epsilon_list, dim_list=dim_list, 
         verbose=verbose, 
         seed=seeds[rep],  # consistent, independent seed control
-        refit_return=refit_return, med=med, stratify=stratify, **kwargs
+        refit_return=refit_return, med=med, stratify=stratify, solver=solver, **kwargs
     ) for rep in range(reps))
 
     print(f"Results of {reps} repetitions of train/test split: {np.mean([res[0] for res in results]):4f} ± {np.std([res[0] for res in results]) / np.sqrt(reps):4f}")
 
     if save:
-        if not os.path.exists("./results/realdata-prediction/"):
-            os.makedirs("./results/realdata-prediction/")
+        if not os.path.exists("./results/realdata_prediction/ckdr/"):
+            os.makedirs("./results/realdata_prediction/ckdr/")
         if isinstance(save, str):
             # Given filename if string
             filename = save 
         else:
             filename = f"CKDR_train_test_split_{type_Y}_{reps}reps"
-        with open(f"./results/realdata-prediction/{filename}.pkl", "wb") as f:
+        with open(f"./results/realdata_prediction/ckdr/{filename}.pkl", "wb") as f:
             pickle.dump(results, f)
 
     return results
